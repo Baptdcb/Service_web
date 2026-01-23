@@ -56,25 +56,40 @@ Future<void> syncCategoriesWithAPI() async {
 Future<void> pushCategoriesToAPI() async {
   final db = await DatabaseHelper().database;
   List<Map<String, dynamic>> categories = await db.query('categorie');
-  var url = Uri.parse('$baseUrl/categories');
 
   for (var categorie in categories) {
     try {
-      var response = await http.post(
-        url,
+      var id = categorie['id'];
+      var body = json.encode({'id': id, 'libelle': categorie['libelle']});
+
+      // 1. Tenter la mise à jour (PUT)
+      var urlPut = Uri.parse('$baseUrl/categories/$id');
+      var responsePut = await http.put(
+        urlPut,
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'id': categorie['id'],
-          'libelle': categorie['libelle'],
-        }),
+        body: body,
       );
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        print(
-          'Erreur (POST Categorie ${categorie['id']}) : ${response.statusCode}',
+
+      if (responsePut.statusCode == 200 || responsePut.statusCode == 204) {
+        continue;
+      }
+
+      // 2. Si non trouvé (404), créer (POST)
+      if (responsePut.statusCode == 404) {
+        var urlPost = Uri.parse('$baseUrl/categories');
+        var responsePost = await http.post(
+          urlPost,
+          headers: {'Content-Type': 'application/json'},
+          body: body,
         );
+        if (responsePost.statusCode != 200 && responsePost.statusCode != 201) {
+          print('Erreur (POST Categorie $id) : ${responsePost.statusCode}');
+        }
+      } else {
+        print('Erreur (PUT Categorie $id) : ${responsePut.statusCode}');
       }
     } catch (e) {
-      print('Exception (POST Categorie) : $e');
+      print('Exception (Push Categorie) : $e');
     }
   }
 }
@@ -98,8 +113,8 @@ Future<void> syncAuteursWithAPI() async {
         await db.insert('auteur', {
           'id': auteur['id'],
           'nom': auteur['nom'] ?? 'Inconnu',
-          'prenoms': auteur['prenoms'] ?? '',
-          'email': auteur['email'],
+          'prenoms': auteur['prenom'] ?? '', // API field is 'prenom'
+          'email': auteur['mail'], // API field is 'mail'
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       print('Auteurs récupérés : ${auteurs.length}');
@@ -122,8 +137,8 @@ Future<void> pushAuteursToAPI() async {
       var body = json.encode({
         'id': id,
         'nom': auteur['nom'],
-        'prenoms': auteur['prenoms'],
-        'email': auteur['email'],
+        'prenom': auteur['prenoms'], // Map local 'prenoms' to API 'prenom'
+        'mail': auteur['email'], // Map local 'email' to API 'mail'
       });
 
       // 1. Tenter la mise à jour (PUT)
@@ -221,40 +236,55 @@ Future<void> pushLivresToAPI() async {
   for (var livre in livres) {
     try {
       var id = livre['id'];
-      Map<String, dynamic> bodyMap = {
-        'id': id,
+      // Body commun
+      Map<String, dynamic> bodyContent = {
         'libelle': livre['libelle'],
         'description': livre['description'],
         // 'nbPage': livre['nbPage'],
         // 'image': livre['image'],
+        // Pour insert/update, l'API attend souvent juste les IDs des relations ou les objets
         'auteurId': livre['auteur_id'],
         'categorieId': livre['categorie_id'],
         'auteur': {'id': livre['auteur_id']},
         'categorie': {'id': livre['categorie_id']},
       };
-      var body = json.encode(bodyMap);
 
-      // 1. Tenter la mise à jour (PUT)
+      // 1. Tenter la mise à jour (PUT) - Avec ID
+      var bodyPut = json.encode({...bodyContent, 'id': id});
       var urlPut = Uri.parse('$baseUrl/livres/$id');
       var responsePut = await http.put(
         urlPut,
         headers: {'Content-Type': 'application/json'},
-        body: body,
+        body: bodyPut,
       );
 
       if (responsePut.statusCode == 200 || responsePut.statusCode == 204) {
         continue;
       }
 
-      // 2. Si 404, créer (POST)
+      // 2. Si 404, créer (POST) - SANS ID
       if (responsePut.statusCode == 404) {
         var urlPost = Uri.parse('$baseUrl/livres');
+        var bodyPost = json.encode(bodyContent); // ID absent
+
         var responsePost = await http.post(
           urlPost,
           headers: {'Content-Type': 'application/json'},
-          body: body,
+          body: bodyPost,
         );
-        if (responsePost.statusCode != 200 && responsePost.statusCode != 201) {
+        if (responsePost.statusCode == 200 || responsePost.statusCode == 201) {
+          var created = json.decode(responsePost.body);
+          int newId = created['id'];
+          if (newId != id) {
+            await db.update(
+              'livre',
+              {'id': newId},
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+            print("Livre synchro: ID local $id -> ID distant $newId");
+          }
+        } else {
           print('Erreur (POST Livre $id) : ${responsePost.statusCode}');
         }
       } else {
