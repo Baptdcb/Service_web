@@ -6,10 +6,23 @@ import 'package:bibliotheca/models/database/dao.dart';
 // URL de base de l'API
 const String baseUrl = 'http://localhost:8080/api';
 
+// Vider la base locale
+Future<void> clearLocalDatabase() async {
+  final db = await DatabaseHelper().database;
+  // Ordre important : enfants d'abord
+  await db.delete('livre');
+  await db.delete('auteur');
+  await db.delete('categorie');
+  print('--- Base locale vidée ---');
+}
+
 // Fonction principale pour tout synchroniser
 Future<void> synchronize() async {
   print('--- Début de la synchronisation ---');
 
+  // ATTENTION: Cela supprime les données locales avant de les envoyer !
+  // Les créations locales non-synchronisées seront perdues.
+  await clearLocalDatabase();
   // 1. Récupérer les données de l'API (Ordre : Parents puis Enfants)
   await syncCategoriesWithAPI();
   await syncAuteursWithAPI();
@@ -77,12 +90,70 @@ Future<void> pushCategoriesToAPI() async {
       // 2. Si non trouvé (404), créer (POST)
       if (responsePut.statusCode == 404) {
         var urlPost = Uri.parse('$baseUrl/categories');
+        // BODY SANS ID pour le POST
+        var bodyPost = json.encode({'libelle': categorie['libelle']});
+
         var responsePost = await http.post(
           urlPost,
           headers: {'Content-Type': 'application/json'},
-          body: body,
+          body: bodyPost,
         );
-        if (responsePost.statusCode != 200 && responsePost.statusCode != 201) {
+
+        if (responsePost.statusCode == 200 || responsePost.statusCode == 201) {
+          // Mise à jour de l'ID local avec celui reçu du serveur
+          var created = json.decode(responsePost.body);
+          int newId = created['id'];
+          if (newId != id) {
+            // Vérifier si le nouvel ID existe déjà localement pour éviter le conflit UNIQUE
+            var existing = await db.query(
+              'categorie',
+              where: 'id = ?',
+              whereArgs: [newId],
+            );
+
+            if (existing.isNotEmpty) {
+              // Conflit : L'ID distant existe déjà localement (mais ce n'est pas le même enregistrement puisqu'on vient de le créer/poster).
+              // Cela arrive si on a fait un GET avant qui a ramené cet ID, ou si une autre synchro l'a créé.
+              // Solution : Supprimer l'entrée locale temporaire (ID 6) et garder celle qui a le bon ID (ID 10) si elle est à jour,
+              // OU mettre à jour l'entrée existante (ID 10) avec les données locales et supprimer l'ancienne (ID 6).
+
+              // Ici, on choisit de supprimer l'entrée locale temporaire car le serveur fait foi
+              // et on suppose que l'entrée avec newId (10) contient les bonnes infos ou sera mise à jour au prochain sync.
+              // Mais il faut aussi migrer les livres liés à l'ancien ID (6) vers le nouveau (10).
+
+              print(
+                "Conflit ID Categorie: ID $newId existe déjà. Fusion/Migration de $id vers $newId.",
+              );
+
+              // 1. Migrer les livres
+              await db.update(
+                'livre',
+                {'categorie_id': newId},
+                where: 'categorie_id = ?',
+                whereArgs: [id],
+              );
+
+              // 2. Supprimer l'ancienne catégorie locale
+              await db.delete('categorie', where: 'id = ?', whereArgs: [id]);
+            } else {
+              // Pas de conflit, mise à jour standard
+              await db.update(
+                'categorie',
+                {'id': newId},
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+              // Optionnel : Mettre à jour les livres qui référençaient l'ancien ID
+              await db.update(
+                'livre',
+                {'categorie_id': newId},
+                where: 'categorie_id = ?',
+                whereArgs: [id],
+              );
+            }
+            print("Categorie synchro: ID local $id -> ID distant $newId");
+          }
+        } else {
           print('Erreur (POST Categorie $id) : ${responsePost.statusCode}');
         }
       } else {
@@ -132,21 +203,35 @@ Future<void> pushAuteursToAPI() async {
   List<Map<String, dynamic>> auteurs = await db.query('auteur');
 
   for (var auteur in auteurs) {
+    var id = auteur['id'];
     try {
-      var id = auteur['id'];
-      var body = json.encode({
-        'id': id,
-        'nom': auteur['nom'],
-        'prenom': auteur['prenoms'], // Map local 'prenoms' to API 'prenom'
-        'mail': auteur['email'], // Map local 'email' to API 'mail'
-      });
+      // Sanitization pour éviter les 400 Bad Request
+      String nom = (auteur['nom'] as String?)?.trim() ?? '';
+      if (nom.isEmpty) nom = 'Inconnu';
+
+      String prenom = (auteur['prenoms'] as String?)?.trim() ?? '';
+      if (prenom.isEmpty) prenom = 'Inconnu';
+
+      String? email = (auteur['email'] as String?)?.trim();
+      if (email != null && email.isNotEmpty) {
+        // Validation basique de l'email
+        final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+        if (!emailRegex.hasMatch(email)) {
+          print("Email invalide ignoré pour l'auteur ID $id: $email");
+          email = null;
+        }
+      } else {
+        email = null;
+      }
+
+      var bodyRaw = {'nom': nom, 'prenom': prenom, 'mail': email};
 
       // 1. Tenter la mise à jour (PUT)
       var urlPut = Uri.parse('$baseUrl/auteurs/$id');
       var responsePut = await http.put(
         urlPut,
         headers: {'Content-Type': 'application/json'},
-        body: body,
+        body: json.encode({...bodyRaw, 'id': id}),
       );
 
       if (responsePut.statusCode == 200 || responsePut.statusCode == 204) {
@@ -154,24 +239,71 @@ Future<void> pushAuteursToAPI() async {
         continue;
       }
 
-      // 2. Si non trouvé (404), créer (POST)
-      // On accepte aussi de fall-back si le PUT échoue pour autre raison non-fatale,
-      // mais attention aux 500 qui pourraient se répéter.
-      if (responsePut.statusCode == 404) {
+      // 2. Si non trouvé (404) ou Bad Request (400 - peut arriver si ID incoherent), tenter créer (POST)
+      if (responsePut.statusCode == 404 || responsePut.statusCode == 400) {
         var urlPost = Uri.parse('$baseUrl/auteurs');
+        // BODY SANS ID pour le POST (bodyRaw déjà préparé)
+
         var responsePost = await http.post(
           urlPost,
           headers: {'Content-Type': 'application/json'},
-          body: body,
+          body: json.encode(bodyRaw),
         );
-        if (responsePost.statusCode != 200 && responsePost.statusCode != 201) {
+        print(
+          "Réponse POST Auteur (ID local $id) : ${responsePost.statusCode} - ${responsePost.body}",
+        ); // DEBUG
+        if (responsePost.statusCode == 200 || responsePost.statusCode == 201) {
+          // Mise à jour de l'ID local avec celui reçu du serveur
+          var created = json.decode(responsePost.body);
+          int newId = created['id'];
+          if (newId != id) {
+            // Vérifier si le nouvel ID existe déjà localement
+            var existing = await db.query(
+              'auteur',
+              where: 'id = ?',
+              whereArgs: [newId],
+            );
+
+            if (existing.isNotEmpty) {
+              print(
+                "Conflit ID Auteur: ID $newId existe déjà. Fusion/Migration de $id vers $newId.",
+              );
+
+              // 1. Migrer les livres
+              await db.update(
+                'livre',
+                {'auteur_id': newId},
+                where: 'auteur_id = ?',
+                whereArgs: [id],
+              );
+
+              // 2. Supprimer l'ancien auteur local
+              await db.delete('auteur', where: 'id = ?', whereArgs: [id]);
+            } else {
+              await db.update(
+                'auteur',
+                {'id': newId},
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+              // Optionnel : Mettre à jour les livres qui référençaient l'ancien ID
+              await db.update(
+                'livre',
+                {'auteur_id': newId},
+                where: 'auteur_id = ?',
+                whereArgs: [id],
+              );
+            }
+            print("Auteur synchro: ID local $id -> ID distant $newId");
+          }
+        } else {
           print('Erreur (POST Auteur $id) : ${responsePost.statusCode}');
         }
       } else {
         print('Erreur (PUT Auteur $id) : ${responsePut.statusCode}');
       }
     } catch (e) {
-      print('Exception (Push Auteur) : $e');
+      print('Exception (Push Auteur $id) : $e');
     }
   }
 }
@@ -238,16 +370,21 @@ Future<void> pushLivresToAPI() async {
       var id = livre['id'];
       // Body commun
       Map<String, dynamic> bodyContent = {
-        'libelle': livre['libelle'],
-        'description': livre['description'],
+        'libelle': livre['libelle'] ?? '',
+        'description': livre['description'] ?? '',
         // 'nbPage': livre['nbPage'],
         // 'image': livre['image'],
-        // Pour insert/update, l'API attend souvent juste les IDs des relations ou les objets
-        'auteurId': livre['auteur_id'],
-        'categorieId': livre['categorie_id'],
-        'auteur': {'id': livre['auteur_id']},
-        'categorie': {'id': livre['categorie_id']},
       };
+
+      // Ajout conditionnel des relations
+      if (livre['auteur_id'] != null) {
+        bodyContent['auteur'] = {'id': livre['auteur_id']};
+        // bodyContent['auteurId'] = livre['auteur_id']; // Optionnel selon l'API
+      }
+      if (livre['categorie_id'] != null) {
+        bodyContent['categorie'] = {'id': livre['categorie_id']};
+        // bodyContent['categorieId'] = livre['categorie_id']; // Optionnel selon l'API
+      }
 
       // 1. Tenter la mise à jour (PUT) - Avec ID
       var bodyPut = json.encode({...bodyContent, 'id': id});
@@ -263,9 +400,10 @@ Future<void> pushLivresToAPI() async {
       }
 
       // 2. Si 404, créer (POST) - SANS ID
-      if (responsePut.statusCode == 404) {
+      if (responsePut.statusCode == 404 || responsePut.statusCode == 400) {
         var urlPost = Uri.parse('$baseUrl/livres');
         var bodyPost = json.encode(bodyContent); // ID absent
+        print("Tentative POST Livre sans ID: $bodyPost"); // DEBUG
 
         var responsePost = await http.post(
           urlPost,
@@ -276,19 +414,42 @@ Future<void> pushLivresToAPI() async {
           var created = json.decode(responsePost.body);
           int newId = created['id'];
           if (newId != id) {
-            await db.update(
+            // Vérifier si le nouvel ID existe déjà localement
+            var existing = await db.query(
               'livre',
-              {'id': newId},
               where: 'id = ?',
-              whereArgs: [id],
+              whereArgs: [newId],
             );
+
+            if (existing.isNotEmpty) {
+              print(
+                "Conflit ID Livre: ID $newId existe déjà. Suppression locale de l'ancien ID $id.",
+              );
+              // Contrairement aux catégories/auteurs, le livre est une feuille, on peut juste supprimer l'ancien
+              // car il a été recréé sur le serveur sous le newId et on ne va pas propagé cet ID ailleurs pour l'instant.
+              // MAIS attention si on a des données locales plus récentes sur newId...
+              // Ici on suppose que le POST vient de réussir, donc newId contient nos données.
+              // On supprime l'enregistrement temporaire local
+              await db.delete('livre', where: 'id = ?', whereArgs: [id]);
+            } else {
+              await db.update(
+                'livre',
+                {'id': newId},
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+            }
             print("Livre synchro: ID local $id -> ID distant $newId");
           }
         } else {
-          print('Erreur (POST Livre $id) : ${responsePost.statusCode}');
+          print(
+            'Erreur (POST Livre $id) : ${responsePost.statusCode} - Body: ${responsePost.body}',
+          );
         }
       } else {
-        print('Erreur (PUT Livre $id) : ${responsePut.statusCode}');
+        print(
+          'Erreur (PUT Livre $id) : ${responsePut.statusCode} - Body: ${responsePut.body}',
+        );
       }
     } catch (e) {
       print('Exception (Push Livre) : $e');
