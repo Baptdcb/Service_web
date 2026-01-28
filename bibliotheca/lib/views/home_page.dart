@@ -1,6 +1,7 @@
 import 'package:bibliotheca/views/liste_auteur.dart';
 import 'package:bibliotheca/views/liste_categorie.dart';
 import 'package:bibliotheca/views/liste_livre.dart';
+import 'package:bibliotheca/widgets/menu_tile.dart';
 import 'package:flutter/material.dart';
 
 class HomePage extends StatefulWidget {
@@ -10,6 +11,9 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  void _navigate(Widget page) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text("Bienvenue sur Bibliotheca")),
@@ -18,56 +22,20 @@ class _HomePageState extends State<HomePage> {
         crossAxisCount: 2,
       ),
       children: [
-        MaterialButton(
-          textColor: Colors.blue,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ListeLivrePage()),
-            );
-          },
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Icon(Icons.book, size: 50),
-              SizedBox(height: 20),
-              Text("Livres", style: TextStyle(fontSize: 17)),
-            ],
-          ),
+        MenuTile(
+          icon: Icons.book,
+          label: "Livres",
+          onTap: () => _navigate(const ListeLivrePage()),
         ),
-        MaterialButton(
-          textColor: Colors.blue,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ListeCategorie()),
-            );
-          },
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Icon(Icons.category, size: 50),
-              SizedBox(height: 20),
-              Text("Catégories", style: TextStyle(fontSize: 17)),
-            ],
-          ),
+        MenuTile(
+          icon: Icons.category,
+          label: "Catégories",
+          onTap: () => _navigate(const ListeCategorie()),
         ),
-        MaterialButton(
-          textColor: Colors.blue,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ListeAuteur()),
-            );
-          },
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Icon(Icons.person, size: 50),
-              SizedBox(height: 20),
-              Text("Auteur", style: TextStyle(fontSize: 17)),
-            ],
-          ),
+        MenuTile(
+          icon: Icons.person,
+          label: "Auteurs",
+          onTap: () => _navigate(const ListeAuteur()),
         ),
       ],
     ),

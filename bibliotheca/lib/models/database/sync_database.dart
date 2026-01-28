@@ -6,32 +6,19 @@ import 'package:bibliotheca/models/database/dao.dart';
 // URL de base de l'API
 const String baseUrl = 'http://localhost:8080/api';
 
-// Vider la base locale
-Future<void> clearLocalDatabase() async {
-  final db = await DatabaseHelper().database;
-  // Ordre important : enfants d'abord
-  await db.delete('livre');
-  await db.delete('auteur');
-  await db.delete('categorie');
-  print('--- Base locale vidée ---');
-}
-
 // Fonction principale pour tout synchroniser
 Future<void> synchronize() async {
   print('--- Début de la synchronisation ---');
 
-  // ATTENTION: Cela supprime les données locales avant de les envoyer !
-  // Les créations locales non-synchronisées seront perdues.
-  await clearLocalDatabase();
-  // 1. Récupérer les données de l'API (Ordre : Parents puis Enfants)
-  await syncCategoriesWithAPI();
-  await syncAuteursWithAPI();
-  await syncLivresWithAPI();
-
-  // 2. Envoyer les données locales vers l'API
+  // 1. Envoyer les données locales vers l'API EN PREMIER
   await pushCategoriesToAPI();
   await pushAuteursToAPI();
   await pushLivresToAPI();
+
+  // 2. Récupérer les données mises à jour de l'API (Ordre : Parents puis Enfants)
+  await syncCategoriesWithAPI();
+  await syncAuteursWithAPI();
+  await syncLivresWithAPI();
 
   print('--- Synchronisation terminée ---');
 }

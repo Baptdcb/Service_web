@@ -1,20 +1,19 @@
 import 'package:bibliotheca/models/database/dao.dart';
+import 'package:bibliotheca/controllers/edition_controller.dart';
+import 'package:bibliotheca/widgets/form_text_field.dart';
 import 'package:flutter/material.dart';
 
 class EditionLivre extends StatefulWidget {
-  const EditionLivre({Key? key}) : super(key: key);
+  const EditionLivre({super.key});
   @override
   State<EditionLivre> createState() => _EditionLivreState();
 }
 
 class _EditionLivreState extends State<EditionLivre> {
   final _formKey = GlobalKey<FormState>();
-  final _titreController = TextEditingController();
-  final _descriptionController = TextEditingController();
-
-  int? _selectedCategorieId;
-  int? _selectedAuteurId;
-
+  final _controller = LivreEditionController();
+  final _titreCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _auteurs = [];
 
@@ -35,12 +34,11 @@ class _EditionLivreState extends State<EditionLivre> {
 
   Future<void> _save() async {
     if (_formKey.currentState!.validate()) {
-      await DatabaseHelper().insertLivre({
-        'libelle': _titreController.text,
-        'description': _descriptionController.text,
-        'auteur_id': _selectedAuteurId,
-        'categorie_id': _selectedCategorieId,
-      });
+      _controller.titre = _titreCtrl.text;
+      _controller.description = _descCtrl.text;
+      print('Catégorie sélectionnée: ${_controller.categorieId}');
+      print('Auteur sélectionné: ${_controller.auteurId}');
+      await _controller.save();
       if (!mounted) return;
       Navigator.pop(context);
     }
@@ -54,53 +52,44 @@ class _EditionLivreState extends State<EditionLivre> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          MaterialButton(
-            onPressed: () {},
-            child: const CircleAvatar(radius: 50, child: Icon(Icons.book)),
-          ),
-          TextFormField(
-            controller: _titreController,
-            decoration: const InputDecoration(labelText: "Titre du livre"),
+          FormTextField(
+            controller: _titreCtrl,
+            label: "Titre du livre",
             validator: (v) => v!.isEmpty ? 'Requis' : null,
           ),
           DropdownButtonFormField<int>(
-            value: _selectedCategorieId,
-            items: _categories.map((cat) {
-              return DropdownMenuItem<int>(
-                value: cat['id'],
-                child: Text(cat['libelle'] ?? ''),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedCategorieId = value;
-              });
-            },
+            value: _controller.categorieId,
+            items: _categories
+                .map(
+                  (cat) => DropdownMenuItem<int>(
+                    value: cat['id'],
+                    child: Text(cat['libelle'] ?? ''),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) =>
+                setState(() => _controller.categorieId = value),
             decoration: const InputDecoration(labelText: "Catégorie"),
             validator: (v) => v == null ? 'Requis' : null,
           ),
           DropdownButtonFormField<int>(
-            value: _selectedAuteurId,
-            items: _auteurs.map((aut) {
-              return DropdownMenuItem<int>(
-                value: aut['id'],
-                child: Text("${aut['prenoms']} ${aut['nom']}"),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedAuteurId = value;
-              });
-            },
+            value: _controller.auteurId,
+            items: _auteurs
+                .map(
+                  (aut) => DropdownMenuItem<int>(
+                    value: aut['id'],
+                    child: Text("${aut['prenoms']} ${aut['nom']}"),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => _controller.auteurId = value),
             decoration: const InputDecoration(labelText: "Auteur"),
             validator: (v) => v == null ? 'Requis' : null,
           ),
-          TextFormField(
-            controller: _descriptionController,
+          FormTextField(
+            controller: _descCtrl,
+            label: "Description du livre",
             maxLines: 5,
-            decoration: const InputDecoration(
-              labelText: "Description du livre",
-            ),
           ),
           const SizedBox(height: 20),
           ElevatedButton(onPressed: _save, child: const Text("Enregistrer")),

@@ -1,41 +1,20 @@
 import 'package:bibliotheca/views/edition_auteur.dart';
+import 'package:bibliotheca/controllers/list_controller.dart';
 import 'package:flutter/material.dart';
-import 'package:bibliotheca/models/database/dao.dart';
-import 'package:bibliotheca/models/database/sync_database.dart';
 
 class ListeAuteur extends StatefulWidget {
-  const ListeAuteur({Key? key}) : super(key: key);
+  const ListeAuteur({super.key});
   @override
   State<ListeAuteur> createState() => _ListeAuteurState();
 }
 
 class _ListeAuteurState extends State<ListeAuteur> {
-  List<Map<String, dynamic>> _auteurs = [];
-  bool _isLoading = true;
+  final _controller = AuteurController();
 
   @override
   void initState() {
     super.initState();
-    _chargerAuteurs();
-  }
-
-  Future<void> _chargerAuteurs() async {
-    setState(() => _isLoading = true);
-    try {
-      final data = await DatabaseHelper().getAuteurs();
-      setState(() {
-        _auteurs = data;
-      });
-    } catch (e) {
-      debugPrint("Erreur auteurs: $e");
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _rafraichir() async {
-    await synchronize();
-    await _chargerAuteurs();
+    _controller.loadItems(() => setState(() {}));
   }
 
   @override
@@ -43,34 +22,33 @@ class _ListeAuteurState extends State<ListeAuteur> {
     appBar: AppBar(
       title: const Text("Liste des auteurs"),
       actions: [
-        IconButton(icon: const Icon(Icons.refresh), onPressed: _rafraichir),
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: () => _controller.refresh(() => setState(() {})),
+        ),
       ],
     ),
     floatingActionButton: FloatingActionButton(
       child: const Icon(Icons.add),
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const EditionAuteur()),
-        ).then((_) => _chargerAuteurs());
-      },
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const EditionAuteur()),
+      ).then((_) => _controller.loadItems(() => setState(() {}))),
     ),
-    body: _isLoading
+    body: _controller.isLoading
         ? const Center(child: CircularProgressIndicator())
-        : _auteurs.isEmpty
+        : _controller.items.isEmpty
         ? const Center(child: Text("Aucun auteur."))
         : ListView.builder(
-            itemCount: _auteurs.length,
+            itemCount: _controller.items.length,
             itemBuilder: (context, i) {
-              final item = _auteurs[i];
-              final nom = item['nom'] ?? '';
-              final prenoms = item['prenoms'] ?? '';
-              final email = item['email'] ?? '';
+              final item = _controller.items[i];
               return ListTile(
                 leading: const Icon(Icons.person),
-                title: Text("$prenoms $nom".trim()),
-                subtitle: Text(email),
-                onTap: () {},
+                title: Text(
+                  "${item['prenoms'] ?? ''} ${item['nom'] ?? ''}".trim(),
+                ),
+                subtitle: Text(item['email'] ?? ''),
               );
             },
           ),

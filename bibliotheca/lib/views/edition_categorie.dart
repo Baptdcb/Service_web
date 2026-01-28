@@ -1,21 +1,23 @@
-import 'package:bibliotheca/models/database/dao.dart';
+import 'package:bibliotheca/controllers/edition_controller.dart';
+import 'package:bibliotheca/widgets/form_text_field.dart';
 import 'package:flutter/material.dart';
 
 class EditionCategorie extends StatefulWidget {
-  const EditionCategorie({Key? key}) : super(key: key);
+  const EditionCategorie({super.key});
   @override
   State<EditionCategorie> createState() => _EditionCategorieState();
 }
 
 class _EditionCategorieState extends State<EditionCategorie> {
   final _formKey = GlobalKey<FormState>();
-  final _libelleController = TextEditingController();
+  final _controller = CategorieEditionController();
+  final _libelleCtrl = TextEditingController();
 
   Future<void> _save() async {
     if (_formKey.currentState!.validate()) {
-      await DatabaseHelper().insertCategorie({
-        'libelle': _libelleController.text,
-      });
+      _controller.libelle = _libelleCtrl.text;
+      print('--- Sauvegarde Catégorie: "${_controller.libelle}" ---');
+      await _controller.save();
       if (!mounted) return;
       Navigator.pop(context);
     }
@@ -29,11 +31,10 @@ class _EditionCategorieState extends State<EditionCategorie> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          TextFormField(
-            controller: _libelleController,
-            decoration: const InputDecoration(labelText: "Nom catégorie"),
-            validator: (value) =>
-                value == null || value.isEmpty ? 'Champs requis' : null,
+          FormTextField(
+            controller: _libelleCtrl,
+            label: "Nom catégorie",
+            validator: (v) => v == null || v.isEmpty ? 'Champs requis' : null,
           ),
           const SizedBox(height: 20),
           ElevatedButton(onPressed: _save, child: const Text("Enregistrer")),

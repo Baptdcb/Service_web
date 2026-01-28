@@ -1,25 +1,29 @@
-import 'package:bibliotheca/models/database/dao.dart';
+import 'package:bibliotheca/controllers/edition_controller.dart';
+import 'package:bibliotheca/widgets/form_text_field.dart';
 import 'package:flutter/material.dart';
 
 class EditionAuteur extends StatefulWidget {
-  const EditionAuteur({Key? key}) : super(key: key);
+  const EditionAuteur({super.key});
   @override
   State<EditionAuteur> createState() => _EditionAuteurState();
 }
 
 class _EditionAuteurState extends State<EditionAuteur> {
   final _formKey = GlobalKey<FormState>();
-  final _nomController = TextEditingController();
-  final _prenomsController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _controller = AuteurEditionController();
+  final _nomCtrl = TextEditingController();
+  final _prenomsCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
 
   Future<void> _save() async {
     if (_formKey.currentState!.validate()) {
-      await DatabaseHelper().insertAuteur({
-        'nom': _nomController.text,
-        'prenoms': _prenomsController.text,
-        'email': _emailController.text,
-      });
+      _controller.nom = _nomCtrl.text;
+      _controller.prenoms = _prenomsCtrl.text;
+      _controller.email = _emailCtrl.text;
+      print(
+        '--- Sauvegarde Auteur: ${_controller.prenoms} ${_controller.nom} ---',
+      );
+      await _controller.save();
       if (!mounted) return;
       Navigator.pop(context);
     }
@@ -33,20 +37,17 @@ class _EditionAuteurState extends State<EditionAuteur> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          TextFormField(
-            controller: _nomController,
-            decoration: const InputDecoration(labelText: "Nom"),
-            validator: (val) => val == null || val.isEmpty ? 'Requis' : null,
+          FormTextField(
+            controller: _nomCtrl,
+            label: "Nom",
+            validator: (v) => v == null || v.isEmpty ? 'Requis' : null,
           ),
-          TextFormField(
-            controller: _prenomsController,
-            decoration: const InputDecoration(labelText: "Prénoms"),
-            validator: (val) => val == null || val.isEmpty ? 'Requis' : null,
+          FormTextField(
+            controller: _prenomsCtrl,
+            label: "Prénoms",
+            validator: (v) => v == null || v.isEmpty ? 'Requis' : null,
           ),
-          TextFormField(
-            controller: _emailController,
-            decoration: const InputDecoration(labelText: "Email"),
-          ),
+          FormTextField(controller: _emailCtrl, label: "Email"),
           const SizedBox(height: 20),
           ElevatedButton(onPressed: _save, child: const Text("Enregistrer")),
         ],

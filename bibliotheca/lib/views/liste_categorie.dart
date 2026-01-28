@@ -1,41 +1,20 @@
 import 'package:bibliotheca/views/edition_categorie.dart';
+import 'package:bibliotheca/controllers/list_controller.dart';
 import 'package:flutter/material.dart';
-import 'package:bibliotheca/models/database/dao.dart';
-import 'package:bibliotheca/models/database/sync_database.dart';
 
 class ListeCategorie extends StatefulWidget {
-  const ListeCategorie({Key? key}) : super(key: key);
+  const ListeCategorie({super.key});
   @override
   State<ListeCategorie> createState() => _ListeCategorieState();
 }
 
 class _ListeCategorieState extends State<ListeCategorie> {
-  List<Map<String, dynamic>> _categories = [];
-  bool _isLoading = true;
+  final _controller = CategorieController();
 
   @override
   void initState() {
     super.initState();
-    _chargerCategories();
-  }
-
-  Future<void> _chargerCategories() async {
-    setState(() => _isLoading = true);
-    try {
-      final data = await DatabaseHelper().getCategories();
-      setState(() {
-        _categories = data;
-      });
-    } catch (e) {
-      debugPrint("Erreur catégories: $e");
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _rafraichir() async {
-    await synchronize();
-    await _chargerCategories();
+    _controller.loadItems(() => setState(() {}));
   }
 
   @override
@@ -43,28 +22,28 @@ class _ListeCategorieState extends State<ListeCategorie> {
     appBar: AppBar(
       title: const Text("Liste des catégories"),
       actions: [
-        IconButton(icon: const Icon(Icons.refresh), onPressed: _rafraichir),
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: () => _controller.refresh(() => setState(() {})),
+        ),
       ],
     ),
     floatingActionButton: FloatingActionButton(
       child: const Icon(Icons.add),
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const EditionCategorie()),
-        ).then((_) => _chargerCategories());
-      },
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const EditionCategorie()),
+      ).then((_) => _controller.loadItems(() => setState(() {}))),
     ),
-    body: _isLoading
+    body: _controller.isLoading
         ? const Center(child: CircularProgressIndicator())
-        : _categories.isEmpty
+        : _controller.items.isEmpty
         ? const Center(child: Text("Aucune catégorie."))
         : ListView.builder(
-            itemCount: _categories.length,
+            itemCount: _controller.items.length,
             itemBuilder: (context, i) => ListTile(
               leading: const Icon(Icons.category),
-              title: Text(_categories[i]['libelle'] ?? ''),
-              onTap: () {},
+              title: Text(_controller.items[i]['libelle'] ?? ''),
             ),
           ),
   );

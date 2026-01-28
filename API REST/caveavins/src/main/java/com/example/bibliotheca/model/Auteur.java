@@ -7,21 +7,28 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Column;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Entity
+@Schema(description = "Modèle représentant un Auteur")
 public class Auteur {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(description = "ID unique de l'auteur", example = "1")
     private Integer id;
+    
     @NotBlank
     @Column(nullable = false)
+    @Schema(description = "Nom de l'auteur", example = "Hugo")
     private String nom;
 
     @NotBlank
     @Column(nullable = false)
+    @Schema(description = "Prénom de l'auteur", example = "Victor")
     private String prenom;
 
     @Email(message = "mail doit être une adresse valide")
+    @Schema(description = "Email de l'auteur", example = "victor.hugo@example.com")
     private String mail;
 
     public Integer getId() {
